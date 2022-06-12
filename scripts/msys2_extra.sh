@@ -150,10 +150,11 @@ function msys2_extra_mu_pkg_description ()
 # Maintainer: damon-kwok <damon-kwok@outlook.com>
 # Modification by Juan Jose Garcia Ripoll to fix dependencies
 
-_realname=mu
+_realname=mu-1.6.11
 # _date="`date +%Y-%m-%d@%H-%M-%S`"
-pkgname=${_realname}-git #-${_date}
-pkgver=20201202
+#pkgname=${_realname}-git #-${_date}
+pkgname=mu
+pkgver=1.6.11
 pkgrel=1
 pkgdesc="'mu' is a tool for dealing with e-mail messages stored in the Maildir-format."
 arch=('i686' 'x86_64')
@@ -163,15 +164,19 @@ url="https://www.djcbsoftware.nl/code/mu/"
 # depends=(xapian-core libiconv libguile guile gmp libgc libcrypt)
 # makedepends=(git glib2-devel libiconv-devel libguile-devel gmp-devel libgc-devel libcrypt-devel xapian-core gmime3)
 depends=(glib2 xapian-core libiconv )
-makedepends=(git glib2-devel libiconv-devel xapian-core gmime3 diffutils)
-source=("git+https://github.com/djcb/mu")
-sha256sums=('SKIP')
+makedepends=(git glib2-devel libiconv-devel xapian-core gmime3 diffutils meson)
+#source=("git+https://github.com/djcb/mu")
+source=("mu-$pkgver.tar.gz::https://github.com/djcb/mu/archive/$pkgver.tar.gz")
+md5sums=('119242f28e002db33d7c8b78940f24fd')
+lssha256sums=('SKIP')
 
 pkgver() {
   cd "${srcdir}"/${_realname}
   # printf "r%s.%s" "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
   git log -1 --format="%cd" --date=short | sed 's|-||g'
 }
+
+
 
 build() {
     cd "${srcdir}"/${_realname}
@@ -234,7 +239,7 @@ groups=('libraries')
 license=('GPL')
 url="https://github.com/jstedfast/gmime"
 depends=(glib2 libiconv zlib libgpg-error)
-makedepends=(gcc gcc-libs make libtool autoconf automake pkg-config glib2-devel libiconv-devel zlib-devel libgpg-error-devel)
+makedepends=(gcc gcc-libs make libtool autoconf automake pkg-config glib2-devel libiconv-devel zlib-devel libgpg-error-devel gtk-doc)
 provides=(libgmime-3.0.so)
 source=(http://ftp.gnome.org/pub/gnome/sources/gmime/3.2/gmime-${pkgver}.tar.xz)
 sha256sums=('2aea96647a468ba2160a64e17c6dc6afe674ed9ac86070624a3f584c10737d44')
@@ -271,7 +276,7 @@ function msys2_extra_xapian_pkg_description ()
 
 pkgname=xapian-core
 # epoch=1
-pkgver=1.4.15
+pkgver=1.4.19
 pkgrel=1
 pkgdesc='Open source search engine library.'
 arch=('i686' 'x86_64')
@@ -283,7 +288,8 @@ makedepends=(gcc gcc-libs make libtool autoconf automake 'libutil-linux-devel' '
 options=('libtool')
 source=("https://oligarchy.co.uk/xapian/${pkgver}/${pkgname}-${pkgver}.tar.xz")
 #{,.asc})
-sha512sums=('f28209acae12a42a345382668f7f7da7a2ce5a08362d0e2af63c9f94cb2adca95366499a7afa0bd9008fbfcca4fd1f2c9221e594fc2a2c740f5899e9f03ecad3')
+sha512sums=('D596058D7F9BFA0B73C5B6354331A799936B45F27012894F6792872ADE8656BB0387B504AEA8C1C3EDFBD48787190452E7A49D2B62D181CB050C46EDD3E67346')
+#sha512sums=('f28209acae12a42a345382668f7f7da7a2ce5a08362d0e2af63c9f94cb2adca95366499a7afa0bd9008fbfcca4fd1f2c9221e594fc2a2c740f5899e9f03ecad3')
 
 # 1.4.14 sha512sums=('c08c9abe87e08491566b7cfa8cda9e2a80e4959a647428b6d82bce7af1c967b4cb463607ffb8976372a980c163923ced36117a66e0b5a1f35659393def3d371b')
             # 'SKIP')
