@@ -55,14 +55,14 @@ jobs:
       #   run: powershell -noprofile -Command Get-PSDrive
 
       - name: Build Emacs
-        run: .\emacs-build.cmd --nativecomp-aot --slim --no-compress --with-rsvg --with-zlib --with-tiff --with-xml2 --with-gnutils --branch emacs-28 --build
+        run: .\emacs-build.cmd --clone --nativecomp-aot --slim --no-compress --with-rsvg --with-zlib --with-tiff --with-xml2 --with-gnutils --branch emacs-28 --build
 
       - name: See free space
         run: Get-PSDrive
 
       # Full emacs
       - name: Pack full emacs
-        run: .\emacs-build.cmd --nativecomp-aot --slim --no-compress --with-rsvg --with-zlib --with-tiff --with-xml2 --with-gnutils --branch emacs-28 --pack-all
+        run: .\emacs-build.cmd --clone --nativecomp-aot --slim --no-compress --with-rsvg --with-zlib --with-tiff --with-xml2 --with-gnutils --branch emacs-28 --pack-all
 
       - name: See free space
         run: Get-PSDrive
