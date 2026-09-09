@@ -8,6 +8,15 @@ on:
     - cron: "0 0 1 * *" # monthly
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Emacs version or tag to build (e.g. "31.1", "emacs-31.1", or "stable" for latest stable)'
+        required: false
+        default: 'stable'
+        type: string
+
+permissions:
+  contents: write
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
@@ -15,65 +24,83 @@ jobs:
     name: Prepare build version
     runs-on: ubuntu-latest
     env:
-      EMACS_REPO: https://github.com/kiennq/emacs.git
+      EMACS_REPO: https://github.com/emacs-mirror/emacs.git
       GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7
       - name: Get build version
         id: vars
         run: |
+          VERSION_INPUT="${{ inputs.version }}"
+          if [ -n "$VERSION_INPUT" ] && [ "$VERSION_INPUT" != "stable" ] && [ "$VERSION_INPUT" != "latest" ]; then
+            if [[ "$VERSION_INPUT" =~ ^[0-9] ]]; then
+              TAG="emacs-${VERSION_INPUT}"
+            else
+              TAG="$VERSION_INPUT"
+            fi
+          else
+            echo "Querying latest stable Emacs tag from $EMACS_REPO..."
+            TAG=$(git ls-remote --tags --refs "$EMACS_REPO" 'refs/tags/emacs-[0-9]*' \
+              | sed 's#.*/##' \
+              | grep -E '^emacs-[0-9]+\.[0-9]+$' \
+              | sort -V \
+              | tail -n 1)
+          fi
+
+          if [ -z "$TAG" ]; then
+            echo "Error: Failed to resolve stable Emacs version tag from $EMACS_REPO"
+            exit 1
+          fi
+
+          echo "Selected Emacs tag: $TAG"
+          TAG_VER="${TAG#emacs-}"
+
           mkdir -p ./git/emacs
           cd ./git/emacs/
-          git clone --depth 1 $EMACS_REPO .
+          git clone --depth 1 --branch "$TAG" "$EMACS_REPO" .
           ts=`date +'%Y%m%d'`
           commit=`git rev-parse --short=8 HEAD`
           major_ver=`cat configure.ac | grep -Po 'AC_INIT\(.*\[\K\d+'`
-          version=`echo ${major_ver}.${{ github.run_number }}.${ts}.${commit}`
+          IFS='.' read -r major minor patch <<< "$TAG_VER"
+          minor=${minor:-0}
+
+          version="${TAG_VER}.${{ github.run_number }}.${ts}.${commit}"
+          pkg_version="${major:-$major_ver}.${minor}.${{ github.run_number }}.0"
 
           echo "commit=${commit}" >> $GITHUB_ENV
+          echo "commit=${commit}" >> $GITHUB_OUTPUT
+          echo "tag=${TAG}" >> $GITHUB_ENV
+          echo "tag=${TAG}" >> $GITHUB_OUTPUT
+          echo "tag_ver=${TAG_VER}" >> $GITHUB_ENV
+          echo "tag_ver=${TAG_VER}" >> $GITHUB_OUTPUT
           echo "version=${version}" >> $GITHUB_ENV
-          echo "pkg_version=${major_ver}.${{ github.run_number }}.0.0" >> $GITHUB_ENV
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "pkg_version=${pkg_version}" >> $GITHUB_ENV
+          echo "pkg_version=${pkg_version}" >> $GITHUB_OUTPUT
     outputs:
       repo: ${{ env.EMACS_REPO }}
       version: ${{ env.version }}
       pkg_version: ${{ env.pkg_version }}
       commit: ${{ env.commit }}
+      tag: ${{ env.tag }}
+      tag_ver: ${{ env.tag_ver }}
 
   build_windows:
     needs: prepare_env
-    name: Build Emacs
-    # Matrix strategy from
-    # https://github.com/msys2/MINGW-packages/blob/master/.github/workflows/main.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: windows-2025
-            shell: powershell
-            msystem: MINGW64
-            build_options: --without-mps
-          - os: windows-2025
-            shell: powershell
-            msystem: UCRT64
-            build_options: --variant mps --with-mps --no-strip --enable-build-details
-          - os: windows-11-arm
-            shell: powershell
-            msystem: CLANGARM64
-            build_options: --without-native-compilation --without-mps
-
-    # The type of runner that the job will run on
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    name: Build Emacs (Windows Arm64)
+    runs-on: windows-11-arm
+    timeout-minutes: 90
     env:
       EMACS_REPO: ${{ needs.prepare_env.outputs.repo }}
-      EMACS_COMMIT: ${{ needs.prepare_env.outputs.commit }}
+      EMACS_COMMIT: ${{ needs.prepare_env.outputs.tag }}
       EMACS_PKG_VERSION: ${{ needs.prepare_env.outputs.pkg_version }}
       EMACS_CERT_SECRET: ${{ secrets.EMACS_CERT_SECRET }}
-      MSYSTEM: ${{ matrix.msystem }}
+      MSYSTEM: CLANGARM64
+      BUILD_OPTIONS: --without-native-compilation --without-mps
 
     defaults:
       run:
-        shell: ${{ matrix.shell }}
+        shell: powershell
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
@@ -84,8 +111,8 @@ jobs:
         id: msys2
         uses: msys2/setup-msys2@v2
         with:
-          msystem: ${{ matrix.msystem }}
-          release: ${{ matrix.os == 'windows-11-arm' && 'true' || 'false' }}
+          msystem: CLANGARM64
+          release: true
 
       - name: Update MSYS2_DIR environment variable
         run: |
@@ -97,31 +124,28 @@ jobs:
 
       - name: Install deps
         run: |
-          .\emacs-build.cmd --slim --ensure ${{ matrix.build_options }}
-        # if ("${{ matrix.build_options }}" -notmatch "--without-mps") { .github/scripts/install-libs.cmd }
+          .\emacs-build.cmd --slim --ensure $env:BUILD_OPTIONS
 
       - name: Build Emacs
         # Require --with-* flags, else the deps will not be included properly
         run: |
-          .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --configure --build-dev ${{ matrix.build_options }}
-
-      # - name: Install winget
-      #   uses: Cyberboss/install-winget@v1
-      #   with:
-      #     GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Install MSIXHeroCLI
-      #  run: winget install msixhero --disable-interactivity --accept-source-agreements
-      #  continue-on-error: true
+          .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --configure --build-dev $env:BUILD_OPTIONS
 
       - name: Package Emacs
         run: |
           $env:MSIXHeroCLI = &where.exe MSIXHeroCLI
           if ($env:MSIXHeroCLI) {
-            .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --msix --pack-all ${{ matrix.build_options }}
+            .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --msix --pack-all $env:BUILD_OPTIONS
           } else {
-            .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --pack-all ${{ matrix.build_options }}
+            .\emacs-build.cmd --slim --branch $env:EMACS_COMMIT --pack-all $env:BUILD_OPTIONS
           }
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: emacs-${{ needs.prepare_env.outputs.tag_ver }}-windows-arm64
+          path: ./zips/*{_full.zip,.msix}
+          if-no-files-found: warn
 
       # Upload release for each build
       - name: Upload binaries to release
@@ -135,63 +159,5 @@ jobs:
           release_name: emacs_${{ needs.prepare_env.outputs.version }}
           draft: false
           prerelease: false
+          overwrite: true
 
-  build_linux:
-    needs: prepare_env
-    name: Build Emacs
-    # Matrix strategy from
-    # https://github.com/msys2/MINGW-packages/blob/master/.github/workflows/main.yml
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            shell: bash
-            build_options: --with-rsvg --with-mps --without-xwidgets
-
-    # The type of runner that the job will run on
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
-    env:
-      EMACS_REPO: ${{ needs.prepare_env.outputs.repo }}
-      EMACS_COMMIT: ${{ needs.prepare_env.outputs.commit }}
-      EMACS_PKG_VERSION: ${{ needs.prepare_env.outputs.pkg_version }}
-      EMACS_CERT_SECRET: ${{ secrets.EMACS_CERT_SECRET }}
-
-    defaults:
-      run:
-        shell: ${{ matrix.shell }}
-
-    # Steps represent a sequence of tasks that will be executed as part of the job
-    steps:
-      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v7
-
-      - name: Clone Emacs
-        run: |
-          mkdir -p ./git/emacs
-          cd ./git/emacs/
-          git clone --filter=tree:0 --no-checkout $EMACS_REPO .
-          git checkout $EMACS_COMMIT
-
-      # - name: Install deps
-      #   run: sudo .github/scripts/install-libs.sh
-
-      - name: Build and pack Emacs
-        run: |
-          chmod 755 ./emacs-build-linux.sh
-          mkdir -p ./zips
-          ./emacs-build-linux.sh -s ./git/emacs/ -v ${{ needs.prepare_env.outputs.version }} -d ./zips ${{ matrix.build_options }}
-
-      # Upload release for each build
-      - name: Upload binaries to release
-        id: upload_release
-        uses: svenstaro/upload-release-action@v2
-        with:
-          repo_token: ${{ github.token }}
-          file: ./zips/*.deb
-          file_glob: true
-          tag: v${{ needs.prepare_env.outputs.version }}
-          release_name: emacs_${{ needs.prepare_env.outputs.version }}
-          draft: false
-          prerelease: false
